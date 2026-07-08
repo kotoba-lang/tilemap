@@ -6,7 +6,7 @@
 
 (deftest namespace-loads
   (testing "the restored CLJC namespace loads"
-    (is (some? (the-ns 'tilemap)))))
+    (is (some? (find-ns 'tilemap)))))
 
 ;; mirrors `test_tilemap`
 (deftest test-tilemap
