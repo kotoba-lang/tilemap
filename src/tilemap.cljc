@@ -36,7 +36,7 @@
 (defn layer-get
   "Tile at `(x,y)` in `layer`, or `empty-tile` if out of bounds."
   [layer x y]
-  (if (and (< x (:width layer)) (< y (:height layer)))
+  (if (and (>= x 0) (>= y 0) (< x (:width layer)) (< y (:height layer)))
     (nth (:tiles layer) (+ (* y (:width layer)) x))
     empty-tile))
 
@@ -44,7 +44,7 @@
   "Set the tile at `(x,y)` in `layer`. No-op (returns `layer` unchanged)
   if out of bounds."
   [layer x y tile]
-  (if (and (< x (:width layer)) (< y (:height layer)))
+  (if (and (>= x 0) (>= y 0) (< x (:width layer)) (< y (:height layer)))
     (assoc-in layer [:tiles (+ (* y (:width layer)) x)] tile)
     layer))
 
