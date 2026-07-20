@@ -1,0 +1,66 @@
+(ns tilemap-test
+  (:require [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.ir :as ir]))
+
+(def source (slurp "src/tilemap.kotoba"))
+(defn call [kir function & args] (ir/execute kir function (vec args)))
+(defn map-value [document key]
+  (second (some #(when (= key (first %)) %) (second document))))
+
+(deftest reference-preserves-tilemap-domain-behavior
+  (let [kir (:kir (compiler/compile-source source :js-kotoba-v1))
+        layer (call kir 'tile-layer "ground" 10 10)
+        layer (call kir 'layer-set layer 5 3 (call kir 'solid-tile 1))
+        tile-map (call kir 'add-layer (call kir 'tilemap 16.0) layer)]
+    (is (true? (call kir 'solid? tile-map 5 3)))
+    (is (false? (call kir 'solid? tile-map 0 0)))
+    (is (= ["vector" [["i64" 5] ["i64" 3]]]
+           (call kir 'world-to-tile tile-map
+                 ["vector" [["f64" 85.0] ["f64" 50.0]]])))
+    (is (= ["vector" [["i64" -1] ["i64" -1]]]
+           (call kir 'world-to-tile tile-map
+                 ["vector" [["f64" -0.5] ["f64" -16.0]]])))
+    (testing "negative coordinates cannot alias a valid flat cell"
+      (is (= (call kir 'empty-tile) (call kir 'layer-get layer -1 5)))
+      (is (= layer (call kir 'layer-set layer -1 5 (call kir 'solid-tile 99)))))
+    (testing "clearing a tile removes its sparse occupied entry"
+      (let [cleared (call kir 'layer-set layer 5 3 (call kir 'empty-tile))]
+        (is (false? (call kir 'tile-solid? (call kir 'layer-get cleared 5 3))))
+        (is (= 0 (count (second (map-value cleared :tiles)))))))
+    (testing "instance generation preserves GPU-facing values without GPU authority"
+      (is (= ["vector" [["vector" [["f64" 80.0] ["f64" 48.0]
+                                      ["f64" 16.0] ["f64" 1.0]]]]]
+             (call kir 'layer-to-instances tile-map 0))))
+    (is (= #{} (set (:effects kir))))))
+
+(defn compiler-root []
+  (nth (iterate #(.getParent ^java.nio.file.Path %)
+                (java.nio.file.Path/of (.toURI (io/resource "kotoba/compiler/core.clj")))) 4))
+(defn base64 [value] (.encodeToString (java.util.Base64/getEncoder) value))
+
+(deftest restricted-javascript-and-typed-wasm-preserve-observable-domain-results
+  (let [javascript (compiler/compile-source source :js-kotoba-v1)
+        wasm (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        js64 (base64 (.getBytes ^String (:source javascript) "UTF-8"))
+        wasm64 (base64 ^bytes (:bytes wasm))
+        probe (shell/sh
+               "node" "--input-type=module" "-e"
+               (str "import(process.argv[1]).then(async host=>{"
+                    "const j=await import('data:text/javascript;base64," js64 "');"
+                    "const w=await host.instantiateKotoba(Buffer.from(process.argv[2],'base64'));"
+                    "const run=x=>{let l=x['tile-layer']('ground',10n,10n);l=x['layer-set'](l,5n,3n,x['solid-tile'](1n));"
+                    "const m=x['add-layer'](x.tilemap(16),l);if(!x['solid?'](m,5n,3n)||x['solid?'](m,0n,0n))throw Error('solid');"
+                    "const i=x['layer-to-instances'](m,0n);if(i[1].length!==1||i[1][0][1][0][1]!==80)throw Error('instances');"
+                    "const c=x['layer-set'](l,5n,3n,x['empty-tile']());if(x['tile-solid?'](x['layer-get'](c,5n,3n)))throw Error('clear');"
+                    "if(x['layer-set'](l,-1n,5n,x['solid-tile'](99n))[1].find(e=>e[0]===':tiles')[1][1].length!==1)throw Error('negative');};"
+                    "run(j.instantiateKotoba({}));run(w.instance.exports);"
+                    "}).catch(e=>{console.error(e);process.exit(99)})")
+               (.toString (.toUri (.resolve (compiler-root) "runtime/browser-host.mjs"))) wasm64)]
+    (is (zero? (:exit probe)) (:err probe))))
+
+(deftest production-source-authority
+  (is (= ["src/tilemap.kotoba"]
+         (->> (file-seq (io/file "src")) (filter #(.isFile %)) (map str) sort vec))))
