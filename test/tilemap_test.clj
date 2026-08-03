@@ -3,12 +3,12 @@
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def source (slurp "src/tilemap.kotoba"))
 (defn call [kir function & args] (ir/execute kir function (vec args)))
 (defn map-value [document key]
-  (second (some #(when (= key (first %)) %) (second document))))
+  (second (some #(when (= ["keyword" key] (first %)) %) (second document))))
 
 (deftest reference-preserves-tilemap-domain-behavior
   (let [kir (:kir (compiler/compile-source source :js-kotoba-v1))
@@ -55,7 +55,7 @@
                     "const m=x['add-layer'](x.tilemap(16),l);if(!x['solid?'](m,5n,3n)||x['solid?'](m,0n,0n))throw Error('solid');"
                     "const i=x['layer-to-instances'](m,0n);if(i[1].length!==1||i[1][0][1][0][1]!==80)throw Error('instances');"
                     "const c=x['layer-set'](l,5n,3n,x['empty-tile']());if(x['tile-solid?'](x['layer-get'](c,5n,3n)))throw Error('clear');"
-                    "if(x['layer-set'](l,-1n,5n,x['solid-tile'](99n))[1].find(e=>e[0]===':tiles')[1][1].length!==1)throw Error('negative');};"
+                    "if(x['layer-set'](l,-1n,5n,x['solid-tile'](99n))[1].find(e=>e[0][0]==='keyword'&&e[0][1]===':tiles')[1][1].length!==1)throw Error('negative');};"
                     "run(j.instantiateKotoba({}));run(w.instance.exports);"
                     "}).catch(e=>{console.error(e);process.exit(99)})")
                (.toString (.toUri (.resolve (compiler-root) "runtime/browser-host.mjs"))) wasm64)]
