@@ -4,11 +4,11 @@
             solid? layer-to-instances]))
 
 (defn field [value :document key :keyword] :document
-  (option-value-of [:option :document] (document-get value key) (document-null)))
+  (option-or (document-get value key) (document-null)))
 (defn doc-i64 [value :document] :i64
-  (option-value-of [:option :i64] (document-i64-value value) 0))
+  (option-or (document-i64-value value) 0))
 (defn doc-f64 [value :document] :f64
-  (option-value-of [:option :f64] (document-f64-value value) 0.0))
+  (option-or (document-f64-value value) 0.0))
 
 (defn empty-tile [] :document
   (document-map :id (document-i64 0) :flags (document-i64 0)))
@@ -35,8 +35,7 @@
 (defn find-entry-index [entries :document size :i64 index :i64 x :i64 y :i64] :i64
   (if (= index size)
     -1
-    (let [entry (option-value-of [:option :document]
-                  (document-vector-at entries index) (document-null))]
+    (let [entry (option-or (document-vector-at entries index) (document-null))]
       (if (and (= x (entry-x entry)) (= y (entry-y entry)))
         index
         (find-entry-index entries size (+ index 1) x y)))))
@@ -54,8 +53,8 @@
   (if (in-bounds? layer x y)
     (let [index (layer-entry-index layer x y)]
       (if (>= index 0)
-        (field (option-value-of [:option :document]
-                 (document-vector-at (field layer :tiles) index) (document-null)) :tile)
+        (field (option-or (document-vector-at (field layer :tiles) index)
+                          (document-null)) :tile)
         (empty-tile)))
     (empty-tile)))
 
@@ -90,10 +89,8 @@
 
 (defn world-to-tile [tile-map :document position :document] :document
   (let [size (doc-f64 (field tile-map :tile-size))
-        x (doc-f64 (option-value-of [:option :document]
-                     (document-vector-at position 0) (document-null)))
-        y (doc-f64 (option-value-of [:option :document]
-                     (document-vector-at position 1) (document-null)))]
+        x (doc-f64 (option-or (document-vector-at position 0) (document-null)))
+        y (doc-f64 (option-or (document-vector-at position 1) (document-null)))]
     (document-vector (document-i64 (floor-f64 (f64-div x size)))
                      (document-i64 (floor-f64 (f64-div y size))))))
 
@@ -106,8 +103,7 @@
 (defn solid-layers? [layers :document size :i64 index :i64 tile-x :i64 tile-y :i64] :bool
   (if (= index size)
     false
-    (let [layer (option-value-of [:option :document]
-                  (document-vector-at layers index) (document-null))]
+    (let [layer (option-or (document-vector-at layers index) (document-null))]
       (if (tile-solid? (layer-get layer tile-x tile-y))
         true
         (solid-layers? layers size (+ index 1) tile-x tile-y)))))
@@ -130,8 +126,7 @@
                        tile-size :f64 output :document] :document
   (if (= index size)
     output
-    (let [entry (option-value-of [:option :document]
-                  (document-vector-at entries index) (document-null))
+    (let [entry (option-or (document-vector-at entries index) (document-null))
           empty (tile-empty? (field entry :tile))]
       (if empty
         (build-instances entries size (+ index 1) tile-size output)
@@ -139,8 +134,8 @@
           (document-vector-conj output (instance-for entry tile-size)))))))
 
 (defn layer-to-instances [tile-map :document layer-index :i64] :document
-  (let [layer (option-value-of [:option :document]
-                (document-vector-at (field tile-map :layers) layer-index) (document-null))
+  (let [layer (option-or (document-vector-at (field tile-map :layers) layer-index)
+                         (document-null))
         entries (field layer :tiles)
         size (document-count entries)
         tile-size (doc-f64 (field tile-map :tile-size))]
